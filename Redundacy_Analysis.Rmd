@@ -1,0 +1,400 @@
+---
+title: 'Redundancy Analysis'
+author: "Ileana Fenwick"
+date: '2024-02-20'
+output: html_document
+---
+This markdown walks you through how to compute a redundancy analysis (RDA) with covariate observations and a species data frame per methods outlined in Fenwick et al. 2024. Code chunks here have been optimized so you will see it specifically walking through the Mid Atlantic Bight, and in our analysis this exact code was repeated for the Gulf of Maine (GOM) and Georges Bank (GB). Data for GB and the GOM are available in the repository. 
+
+# General Prep and Loading 
+
+Modify for your system. 
+```{r setup, include=FALSE}
+
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(vegan)
+library(readr)
+library(data.table)
+
+setwd("~/Desktop/Chapter 1/CTA_Chapter1")
+```
+
+
+```{r Read in and data frame setup for species data and env data, include = FALSE }
+
+##NOTE sp data re already hellinger transformed
+#read in pretransformed species data for each epu 
+mab_sp <- read_csv("rda_data_clean/rda_mabsp.csv")
+#38 x 76 means 1982 to 2019 
+mab_sp<-as.data.frame(mab_sp)
+
+##these variables were already standardized and centered for reading in the clean file 
+mab_rda_variables<-read_csv("rda_data_clean/mab_rda_variables.csv")
+mab_rda_variables
+
+#removing bottom two rows because of missing var from zoops so analysis is 1982 to 2017 
+#redundancy analysis requires a complete time series 
+mab_rda_variables <-mab_rda_variables[-c(37,38),]
+mab_sp<-mab_sp[-c(37,38),]
+mab_sp_spring<-mab_sp_spring[-c(37,38),] 
+#36 x 5 
+
+#RENAMED FOR FIG PLOTTING 
+# mab_rda_variables<-mab_rda_variables %>% rename('MHW CI' = MHW_cum_int)
+# mab_rda_variables
+```
+
+# Testing global model significance 
+### Fall 
+```{r Global model testing } 
+
+full_mab_fall<-rda(mab_sp~.,mab_rda_variables)
+summary(full_mab_fall)
+anova(full_mab_fall) #significant 
+adjR2_full_fall<-RsquareAdj(full_mab_fall)$adj.r.squared
+adjR2_full_fall # adj r2 that is explained by all 5 var is .0845
+
+```
+
+# Step-wise model selection 
+Step-wise selection of environmental variables based two criteria: if their inclusion into the model leads to significant increase of explained variance, and if the AIC of the new model is lower than AIC of the more simple model. Does NOT consider as criteria whether the adjusted R2 of the model exceeds the adjusted R2 of the global model. 
+
+### Fall 
+Model selection includes MHW and Fogarty  
+```{r Fall model selection }
+mab_fall_0<-rda(mab_sp~1,data = mab_rda_variables) #model with only sp matrix and intercept
+mab_fall_all<-rda(mab_sp~.,data = mab_rda_variables)
+mabsel_fall<-ordistep(mab_fall_0, scope = formula (mab_fall_all), direction = 'forward')
+
+mabsel_fall
+#constrained = 0.015 
+
+RsquareAdj(mabsel_fall)
+#### adj r2 = .0774
+
+#significance testing on RDA 
+anova.cca(mabsel_fall, step = 1000)
+summary(mabsel_fall)
+####significant 
+
+# fall_plot1<-ordiplot(sel_fall, type = "points", scaling = 1, cex = 1.5)
+fall_plot2<-ordiplot(mabsel_fall, type = "points", scaling = 2, cex = 1.5)
+
+```
+
+## Also I explored this with other ordi2step code from https://r.qcbs.ca/workshop10/book-en/redundancy-analysis.html
+
+```{r}
+mabfwd.sel<-ordiR2step(mab_fall_0, 
+                    scope = formula (mab_fall_all), 
+                    direction = "forward", 
+                    R2scope = TRUE, 
+                    pstep = 1000, 
+                    trace = TRUE)
+
+mabstepwise_results <- summary(mabfwd.sel)
+
+# Step: R2.adj= 0 
+# Call: mab_sp ~ 1 
+#  
+#                    R2.adjusted
+# <All variables>   0.0845069756
+# + Fogarty         0.0436913266
+# + MHW_cum_int     0.0436232241
+# + mean_gsi        0.0253190660
+# + bottom_temp_an  0.0102859327
+# <none>            0.0000000000
+# + zoop_ratio     -0.0000522687
+# 
+#           Df    AIC      F Pr(>F)   
+# + Fogarty  1 -77.33 2.5991  0.002 **
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# 
+# Step: R2.adj= 0.04369133 
+# Call: mab_sp ~ Fogarty 
+#  
+#                  R2.adjusted
+# <All variables>   0.08450698
+# + MHW_cum_int     0.07740269
+# + mean_gsi        0.06634261
+# + bottom_temp_an  0.05516788
+# + zoop_ratio      0.04450636
+# <none>            0.04369133
+# 
+#               Df     AIC      F Pr(>F)   
+# + MHW_cum_int  1 -77.696 2.2423  0.002 **
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# 
+# Step: R2.adj= 0.07740269 
+# Call: mab_sp ~ Fogarty + MHW_cum_int 
+#  
+#                  R2.adjusted
+# <All variables>   0.08450698
+# + bottom_temp_an  0.08056252
+# + zoop_ratio      0.07924935
+# <none>            0.07740269
+# + mean_gsi        0.07508767
+# 
+#                  Df     AIC      F Pr(>F)
+# + bottom_temp_an  1 -76.927 1.1134    0.3
+
+mabfwd.sel$call
+#rda(formula = mab_sp ~ Fogarty + MHW_cum_int, data = mab_rda_variables)
+
+
+#saving this selected RDA for use moving forward 
+mab_rda<-rda(mab_sp ~ Fogarty + MHW_cum_int, data = mab_rda_variables)
+RsquareAdj(mab_rda)
+# $r.squared
+# [1] 0.1301225
+# 
+# $adj.r.squared
+# [1] 0.07740269
+
+## The explanatory variables Fogarty & MHW explain 7.7% of the variance in community compositon in the MAB 
+
+anova.cca(mab_rda, step = 1000)
+# Permutation test for rda under reduced model
+# Permutation: free
+# Number of permutations: 999
+# 
+# Model: rda(formula = mab_sp ~ Fogarty + MHW_cum_int, data = mab_rda_variables)
+#          Df Variance      F Pr(>F)    
+# Model     2 0.015047 2.4682  0.001 ***
+# Residual 33 0.100588                  
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+anova.cca(mab_rda, step = 1000, by = "term") 
+# Permutation test for rda under reduced model
+# Terms added sequentially (first to last)
+# Permutation: free
+# Number of permutations: 999
+# 
+# Model: rda(formula = mab_sp ~ Fogarty + MHW_cum_int, data = mab_rda_variables)
+#             Df Variance      F Pr(>F)    
+# Fogarty      1 0.008212 2.6940  0.001 ***
+# MHW_cum_int  1 0.006835 2.2423  0.001 ***
+# Residual    33 0.100588                  
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+
+anova.cca(mab_rda, step = 1000, by = "axis") 
+# Permutation test for rda under reduced model
+# Forward tests for axes
+# Permutation: free
+# Number of permutations: 999
+# 
+# Model: rda(formula = mab_sp ~ Fogarty + MHW_cum_int, data = mab_rda_variables)
+#          Df Variance      F Pr(>F)    
+# RDA1      1 0.009272 3.0418  0.001 ***
+# RDA2      1 0.005775 1.8946  0.008 ** 
+# Residual 33 0.100588                  
+# ---
+# Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+# >
+
+#out full model is statistically significant (p = 0.001), every variable included in the model is significant, and every axis is signifcant. 
+
+ordiplot(mab_rda, scaling = 2)
+
+# Custom triplot code!
+
+## extract % explained by the first 2 axes
+perc <- round(100*(summary(mab_rda)$cont$importance[2, 1:2]), 2)
+
+## extract scores - these are coordinates in the RDA space
+sc_si <- scores(mab_rda, display="sites", choices=c(1,2), scaling=2)
+sc_sp <- scores(mab_rda, display="species", choices=c(1,2), scaling=2)
+sc_bp <- scores(mab_rda, display="bp", choices=c(1, 2), scaling=2)
+years<-1982:2017
+## Custom triplot, step by step
+
+# Set up a blank plot with scaling, axes, and labels
+plot(mab_rda,
+     scaling = 2, # set scaling type 
+     type = "none", # this excludes the plotting of any points from the results
+     frame = FALSE,
+     # set axis limits
+     xlim = c(-1,1), 
+     ylim = c(-1,1),
+     # label the plot (title, and axes)
+     main = "Triplot RDA - scaling 2",
+     xlab = paste0("RDA1 (", perc[1], "%)"), 
+     ylab = paste0("RDA2 (", perc[2], "%)") 
+)
+# add points for site scores -- these are the years in our rda 
+points(sc_si,
+       pch = 3, # set shape (here, circle with a fill colour)
+       col = "red", # outline colour
+       
+       cex = 0.75) # size
+# add points for species scores
+text(sc_si + c(0.03, 0.09), # adjust text coordinates to avoid overlap with points 
+     labels = years, 
+     col = "grey40", 
+     font = 2, # bold
+     cex = 0.6)
+points(sc_sp, 
+       pch = 22, # set shape (here, square with a fill colour)
+       col = "black",
+       bg = "#f2bd33", 
+       cex = 1.2)
+# add text labels for species abbreviations
+text(sc_sp + c(0.03, 0.09), # adjust text coordinates to avoid overlap with points 
+     labels = rownames(sc_sp), 
+     col = "grey40", 
+     font = 2, # bold
+     cex = 0.6)
+# add arrows for effects of the expanatory variables
+arrows(0,0, # start them from (0,0)
+       sc_bp[,1], sc_bp[,2], # end them at the score value
+       col = "red", 
+       lwd = 3)
+# add text labels for arrows
+text(x = sc_bp[,1] -0.1, # adjust text coordinate to avoid overlap with arrow tip
+     y = sc_bp[,2] - 0.03, 
+     labels = rownames(sc_bp), 
+     col = "red", 
+     cex = 1, 
+     font = 2)
+
+# To create a color gradient based on years and apply it to the points in your triplot, you can use the `cfunk` color ramp palette that you defined. Here's how you can modify your code to include the color gradient:
+
+
+
+```
+
+FINAL PLOT FOR FIG IN MANUSCRIPT REVISION 
+```{r} 
+# Set up a blank plot with scaling, axes, and labels
+pdf(file = "/Users/ileanafenwick/Desktop/revision_figs/mab_rda_revision.pdf.pdf", 
+    width = 8,
+    height = 8)
+
+
+plot(mab_rda,
+     scaling = 2,
+     type = "none",
+     frame = FALSE,
+     xlim = c(-1, 1),
+     ylim = c(-1, 1),
+     main = "Mid Atlantic Bight",
+     xlab = paste0("RDA1 (", perc[1], "%)"),
+     ylab = paste0("RDA2 (", perc[2], "%)")
+)
+
+# Create a color gradient based on years using cfunk
+color_gradient <- cfunk(length(years))
+
+###Year scores color coded with legend red is later and yellow is earlier 
+# Uncomment the following line to add points for site scores with color gradient
+points(sc_si, pch = 21,
+       col = "black", 
+       bg = color_gradient, 
+       cex = .85)
+
+# add points for species scores
+points(sc_sp,
+       pch = 3, # set shape (here, square with a fill colour)
+       col = "red",
+       # bg = "#f2bd33",
+       cex = 0.75)
+# points(
+#   jitter(sc_sp[, 1], factor = 0.25),  # Add jitter to x-axis
+#   jitter(sc_sp[, 2], factor = 0.25),  # Add jitter to y-axis
+#   pch = 3,  # set shape (here, square with a fill colour)
+#   col = "red",
+#   cex = 0.75
+# )
+arrows(0,0, # start them from (0,0)
+       sc_bp[,1], sc_bp[,2], # end them at the score value
+       col = "blue", 
+       lwd = 1.5, 
+       angle = 20, 
+       length = 0.1)
+# add text labels for arrows
+text(x = sc_bp[,1] -0.1, # adjust text coordinate to avoid overlap with arrow tip
+     y = sc_bp[,2] - 0.05, 
+     labels = c("MHW CI", "Fogarty"), 
+     col = "blue", 
+     cex = 1, 
+     font = 2)
+
+box(col = "black", lwd = 2)
+
+
+dev.off()  # Close the PDF device
+
+
+```
+
+
+# Variable partitioning 
+
+Within the models that are selected with more than one variable, to account for a correlation between the two we can calculate the separation in variation of comm composition due to the correlated variables. 
+
+More information : https://www.davidzeleny.net/anadat-r/doku.php/en:varpart_examples 
+
+
+```{r variable partitioning for models with more than one selected variable}
+# fractions [a+b+c]:
+rda_all <- rda (mab_sp ~ Fogarty + MHW_cum_int, data = mab_rda_variables)
+rda_all
+anova(rda_all)
+# fractions [a+b]:
+rda_Fogarty <- rda (mab_sp ~ Fogarty, data = mab_rda_variables)
+anova(rda_Fogarty)
+# fractions [b+c]:
+rda_mhw <- rda (mab_sp ~ MHW_cum_int, data = mab_rda_variables)
+anova(rda_mhw)
+
+#conditonal effect of fog
+rda_fog_mhw<-rda(mab_sp ~ Fogarty + Condition (MHW_cum_int), data = mab_rda_variables)
+anova(rda_fog_mhw)
+
+#conditional effect mhw 
+rda_mhw_fog<-rda(mab_sp ~ MHW_cum_int + Condition (Fogarty), data = mab_rda_variables)
+anova(rda_mhw_fog)
+```
+
+
+```{r using varp for partitioning}
+varp_mab_fall<-varpart(mab_sp, ~ Fogarty, ~ MHW_cum_int, data = mab_rda_variables) 
+
+varp_mab_fall
+
+plot(varp_mab_fall, digits = 2, Xnames = c('Fogarty', 'MHW Cum.Int.'), bg = c('yellow', 'blue')) 
+
+```
+
+
+## Final signif testing 
+Now to test the significance of ALL RDAs and iterations 
+```{r signif testing}
+
+#global model - signif 
+all_mab<-anova(rda_all)
+library(report)
+report(anova(rda_all))
+
+anova(rda_all)
+
+## Simple (marginal) effect of Fogarty (fraction [a+b]) - signif 
+anova(rda_Fogarty)
+
+## Simple (marginal) effect of mean_gsi (fraction [b+c]) - signif 
+anova(rda_mhw)
+
+## Conditional (partial) effect of dose (fraction [a]) - signif 
+anova(rda_fog_mhw)
+
+## Conditional (partial) effect of cover (fraction [c]) - signif 
+anova(rda_mhw_fog)
+
+```
+
+From these results, you may see that all simple (marginal) and conditional (partial) effects of both predictors are significant at P < 0.05. 
