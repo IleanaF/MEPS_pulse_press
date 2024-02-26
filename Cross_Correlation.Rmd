@@ -1,0 +1,350 @@
+---
+title: "Cross Correlation Analysis"
+author: "Ileana Fenwick"
+date: '2024-02-26'
+output: html_document
+---
+
+---
+title: "MHW_CCF_Final_Analysis"
+author: "Ileana Fenwick"
+date: '2023-05-04'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+setwd("~/Desktop/Chapter 1/CTA_Chapter1")
+library(ecodata)
+library(ggplot2)
+library(reshape2)
+library(lattice)
+library(maptools)
+library(rgdal)
+library(raster)
+library(rgeos)
+library(data.table)
+library(vegan)
+library(vegclust)
+library(ecotraj)
+library(survdat)
+library(lwgeom)
+library(tidyverse)
+library(dplyr)
+```
+
+### 1.1 Wrangle traj metrics 
+
+```{r Traj Metrics}
+traj_metrics <- read_csv("final_trans_sp_traj_metrics.csv")
+traj_metrics<-traj_metrics %>% 
+              dplyr::select(EPU, YEAR, CTA_LEN, CTA_ANG )
+traj_metrics<-traj_metrics %>% filter(YEAR > 1981)
+traj_metrics
+
+#divide up by EPU 
+mab_mets<-traj_metrics %>% filter(EPU == "MAB")
+mab_mets
+
+gom_mets<-traj_metrics %>% filter(EPU == "GOM")
+gom_mets
+
+
+gb_mets<-traj_metrics %>% filter(EPU == "GB")
+gb_mets
+```
+
+### 1.2 Wrangle MHW from ECODATA reporting
+
+```{r General MHW}
+mhw<-ecodata::heatwave
+mhw<-as.data.frame(mhw)
+mhw
+```
+
+#### a) GOM 
+```{r GOM MHW }
+
+##subsetting for time series between 1982 to 2019 
+cum_gom<-subset(mhw,EPU == "GOM" &  Var == "cumulative intensity" & Time > 1980 & Time < 2020)
+cum_gom
+
+#fill in years, any missing value means MHW cum int of 0 
+cum_gom <-complete(cum_gom, Time = 1981:2019)
+cum_gom<- as.data.frame(cum_gom)
+#remove the EPU, Var, units columns 
+#Units = * Celsius 
+  cum_gom<-cum_gom[-c(2,4,5)]
+cum_gom[is.na(cum_gom)]<-0
+
+
+cum_gom<-cum_gom %>% rename(Cum_int = Value) %>% rename(YEAR = Time)
+colnames(cum_gom)
+
+#adding raw MHW cum int to final file 
+for_gom_full_ccf<-cum_gom %>% subset(YEAR >1982)
+for_gom_full_ccf
+  
+new_gomdiff<-data.frame(diff(as.matrix(cum_gom), lag = 1, differences = 1, na.omit = TRUE))
+new_gomdiff
+ new_gomdiff <-new_gomdiff[-c(1)]
+new_gomdiff<-new_gomdiff %>% rename(Diff_MHW = Cum_int)
+
+gom_ccfmhw<-data.frame(gom_mets, new_gomdiff)
+##data frame with mhw data diff and traj metrics 
+gom_ccfmhw
+
+#data frame with trajectory metrics, diff in MHW cum int and raw MHW cum int 
+full_gom_ccf<-right_join(gom_ccfmhw, for_gom_full_ccf, by = "YEAR")
+full_gom_ccf
+
+gom_ccf<-full_gom_ccf
+gom_ccf
+```
+
+#### b) MAB 
+
+```{r MAB MHW}
+
+##subsetting for time series between 1982 to 2019 
+cum_mab<-subset(mhw,EPU == "MAB" &  Var == "cumulative intensity" & Time > 1980 & Time < 2020)
+
+#fill in years, any missing value means MHW cum int of 0 
+cum_mab <-complete(cum_mab, Time = 1981:2019)
+
+#remove 2017 
+cum_mab<-cum_mab[-28,]
+
+cum_mab
+#fill in years, any missing value means MHW cum int of 0 
+
+cum_mab<- as.data.frame(cum_mab)
+#remove the EPU, Var, units columns 
+#Units = * Celsius 
+  cum_mab<-cum_mab[-c(2,4,5)]
+cum_mab[is.na(cum_mab)]<-0
+
+cum_mab<-cum_mab %>% rename(Cum_int = Value) %>% rename(YEAR = Time)
+colnames(cum_mab)
+
+#adding raw MHW cum int to final file 
+for_mab_full_ccf<-cum_mab %>% subset(YEAR >1982)
+for_mab_full_ccf
+  
+new_mabdiff<-data.frame(diff(as.matrix(cum_mab), lag = 1, differences = 1, na.omit = TRUE))
+new_mabdiff
+ new_mabdiff <-new_mabdiff[-c(1)]
+new_mabdiff<-new_mabdiff %>% rename(Diff_MHW = Cum_int)
+
+mab_ccfmhw<-data.frame(mab_mets, new_mabdiff)
+
+##data frame with mhw data diff and traj metrics 
+mab_ccfmhw
+
+#data frame with trajectory metrics, diff in MHW cum int and raw MHW cum int 
+full_mab_ccf<-right_join(mab_ccfmhw, for_mab_full_ccf, by = "YEAR")
+full_mab_ccf
+
+mab_ccf<-full_mab_ccf
+mab_ccf
+
+```
+
+#### c) GB 
+```{r GB MHW }
+
+##subsetting for time series between 1982 to 2019 
+cum_gb<-subset(mhw,EPU == "GB" &  Var == "cumulative intensity" & Time > 1980 & Time < 2020)
+cum_gb
+
+#fill in years, any missing value means MHW cum int of 0 
+cum_gb <-complete(cum_gb, Time = 1981:2019)
+cum_gb<- as.data.frame(cum_gb)
+#remove the EPU, Var, units columns 
+#Units = * Celsius 
+  cum_gb<-cum_gb[-c(2,4,5)]
+cum_gb[is.na(cum_gb)]<-0
+
+
+cum_gb<-cum_gb %>% rename(Cum_int = Value) %>% rename(YEAR = Time)
+colnames(cum_gb)
+
+#adding raw MHW cum int to final file 
+for_gb_full_ccf<-cum_gb %>% subset(YEAR >1982)
+for_gb_full_ccf
+  
+new_gbdiff<-data.frame(diff(as.matrix(cum_gb), lag = 1, differences = 1, na.omit = TRUE))
+new_gbdiff
+ new_gbdiff <-new_gbdiff[-c(1)]
+new_gbdiff<-new_gbdiff %>% rename(Diff_MHW = Cum_int)
+
+gb_ccfmhw<-data.frame(gb_mets, new_gbdiff)
+##data frame with mhw data diff and traj metrics 
+gb_ccfmhw
+
+#data frame with trajectory metrics, diff in MHW cum int and raw MHW cum int 
+full_gb_ccf<-right_join(gb_ccfmhw, for_gb_full_ccf, by = "YEAR")
+full_gb_ccf
+
+gb_ccf<-full_gb_ccf
+gb_ccf
+```
+
+### 2 Cross Correlation 
+The CCF command is
+
+ccf(x-variable name, y-variable name)
+
+H is the correlation between the x variable at a time before t and the y variable at time t 
+
+Mhw = x  
+Traj lengths and angles = y 
+
+H = negative, suggests x leads y 
+H = positive, x lags y 
+
+e.g. H = -5 and corr -0.45 means that MHW cum int (or diff) leads to a significantly lower traj length 5 years later 
+the neg years is where x (MHW) occur before y (change) in time 
+
+A correlation > 0.40 in the natural system would suggest something ecologically significant and worth testing further. In our work we formally use Yoo et al. 2023's significance threshold of 2/sqrt(n-|k|) where n is the total number of observations and k is the time lag. No correlations exceed this threshold 
+
+Only negative time lags are considered ecologically relevant - MHW events LEAD community change metric shifts, cannot be the other way around and if there is the relationship is spurious.  
+
+
+You will see me test two different cross correlations here (all insignificant) the first is the *difference* in MHW metrics from year to year. This felt like an important distinction and apples to apples comparison with CTA metrics because the lengths and angles are a measure of dissimilarity from year to year so we compare them to the difference in environmental variables from year to year. No singificant findings, reported in the supplementary figures of our MS. The second was the raw MHW data comparison to trajectory metrics. Also no significant findings and as such was excluded from the final MS. 
+
+#### a) GOM - no signif 
+```{r GOM CCFs}
+
+##diff in MHW corr with CTA metrics 
+gom_ccf_len<-ccf(gom_ccf$Diff_MHW, gom_ccf$CTA_LEN, na.action = na.pass,lag.max = 7, 
+    ylab = "Cross Correlation",main = "lengths", ylim = c(-0.5,0.5))
+gom_len_val<-ccf(gom_ccf$Diff_MHW, gom_ccf$CTA_LEN, na.action = na.pass,lag.max = 7)
+gom_len_val
+gom_ccf_ang<-ccf(gom_ccf$Diff_MHW, gom_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation",main = "angles", ylim = c(-0.5,0.5))
+gom_ang_val<-ccf(gom_ccf$Diff_MHW, gom_ccf$CTA_ANG, na.action = na.pass,lag.max = 7)
+gom_ang_val
+
+#just trying out with MHW metric not diff, no significance 
+gom_ccf_len_mhw_nodiff<-ccf(gom_ccf$Cum_int, gom_ccf$CTA_LEN, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation")
+
+gom_ccf_ang_mhw_nodiff<-ccf(gom_ccf$Cum_int, gom_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation")
+
+```
+
+
+#### b) MAB - no signif 
+```{r MAB CCFs}
+
+##diff in MHW corr with CTA metrics 
+mab_ccf_len<-ccf(mab_ccf$Diff_MHW, mab_ccf$CTA_LEN, na.action = na.pass,lag.max = 7, 
+    ylab = "Cross Correlation",main = "lengths", ylim = c(-0.5,0.5))
+mab_len_vals<-ccf(mab_ccf$Diff_MHW, mab_ccf$CTA_LEN, na.action = na.pass,lag.max = 7)
+mab_len_vals
+
+mab_ccf_ang<-ccf(mab_ccf$Diff_MHW, mab_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation",main = "angles", ylim = c(-0.5,0.5))
+mab_ang_vals<-mab_ccf_ang<-ccf(mab_ccf$Diff_MHW, mab_ccf$CTA_ANG, na.action = na.pass,lag.max = 7)
+mab_ang_vals
+
+#just trying out with MHW metric not diff, no significance 
+mab_ccf_len_mhw_nodiff<-ccf(mab_ccf$Cum_int, mab_ccf$CTA_LEN, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation")
+
+mab_ccf_ang_mhw_nodiff<-ccf(mab_ccf$Cum_int, mab_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation")
+
+```
+
+#### a) GB - no signif 
+```{r GB CCFs}
+
+##diff in MHW corr with CTA metrics 
+gb_ccf_len<-ccf(gb_ccf$Diff_MHW, gb_ccf$CTA_LEN, na.action = na.pass,lag.max = 7, 
+    ylab = "Cross Correlation", ylim = c(-0.5,0.5), main = "lengths")
+ccf(gb_ccf$Diff_MHW, gb_ccf$CTA_LEN, na.action = na.pass,lag.max = 7)
+gb_len_ccfvalues = ccf(gb_ccf$Diff_MHW, gb_ccf$CTA_LEN, na.action = na.pass, lag.max = 7)
+gb_len_ccfvalues
+
+gb_ccf_ang<-ccf(gb_ccf$Diff_MHW, gb_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation", main = "angles", ylim = c(-0.5,0.5))
+
+gb_ang_values<-ccf(gb_ccf$Diff_MHW, gb_ccf$CTA_ANG, na.action = na.pass,lag.max = 7)
+gb_ang_values
+
+#just trying out with MHW metric not diff, no significance 
+gb_ccf_len_mhw_notdiff<-ccf(gb_ccf$Cum_int, gb_ccf$CTA_LEN, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation")
+
+gb_ccf_ang_mhw_notdiff<-ccf(gb_ccf$Cum_int, gb_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation")
+
+```
+
+
+#### Exporting Figs 
+
+```{r MAB figure export}
+pdf(file = "/Users/ileanafenwick/Desktop/Chapter 1/Ch1 Publication Development/mab_ccf_plot_len.pdf", 
+    width = 8,
+    height = 8)
+
+mab_ccf_len<-ccf(mab_ccf$Diff_MHW, mab_ccf$CTA_LEN, na.action = na.pass,lag.max = 7, 
+    ylab = "Cross Correlation",main = " mab lengths", ylim = c(-0.5,0.5))
+
+dev.off
+
+pdf(file = "/Users/ileanafenwick/Desktop/Chapter 1/Ch1 Publication Development/mab_ccf_plot_ang.pdf", 
+    width = 8,
+    height = 8)
+
+mab_ccf_ang<-ccf(mab_ccf$Diff_MHW, mab_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation",main = "mab angles", ylim = c(-0.5,0.5))
+
+dev.off
+```
+
+```{r GOM figure export}
+
+pdf(file = "/Users/ileanafenwick/Desktop/Chapter 1/Ch1 Publication Development/gom_ccf_plot_len.pdf", 
+    width = 8,
+    height = 8)
+
+gom_ccf_len<-ccf(gom_ccf$Diff_MHW, gom_ccf$CTA_LEN, na.action = na.pass,lag.max = 7, 
+    ylab = "Cross Correlation",main = " gom lengths", ylim = c(-0.5,0.5))
+
+dev.off
+
+pdf(file = "/Users/ileanafenwick/Desktop/Chapter 1/Ch1 Publication Development/gom_ccf_plot_ang.pdf", 
+    width = 8,
+    height = 8)
+
+gom_ccf_ang<-ccf(gom_ccf$Diff_MHW, gom_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation",main = "gom angles", ylim = c(-0.5,0.5))
+
+dev.off
+```
+
+```{r GB figure export}
+
+pdf(file = "/Users/ileanafenwick/Desktop/Chapter 1/Ch1 Publication Development/gb_ccf_plot_len.pdf", 
+    width = 8,
+    height = 8)
+
+gb_ccf_len<-ccf(gb_ccf$Diff_MHW, gb_ccf$CTA_LEN, na.action = na.pass,lag.max = 7, 
+    ylab = "Cross Correlation",main = " gb lengths", ylim = c(-0.5,0.5))
+
+dev.off
+
+pdf(file = "/Users/ileanafenwick/Desktop/Chapter 1/Ch1 Publication Development/gb_ccf_plot_ang.pdf", 
+    width = 8,
+    height = 8)
+
+gb_ccf_ang<-ccf(gb_ccf$Diff_MHW, gb_ccf$CTA_ANG, na.action = na.pass,lag.max = 7,
+    ylab = "Cross Correlation",main = "gb angles", ylim = c(-0.5,0.5))
+
+dev.off
+```
