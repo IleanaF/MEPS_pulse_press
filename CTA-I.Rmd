@@ -1,0 +1,318 @@
+---
+title: "Community Trajectory Analysis - Lengths and Angles"
+author: "Ileana Fenwick"
+date: '2024-02-20'
+output: html_document
+---
+
+CTA-I outlines the methods for running a successful community trajectory analysis with lengths and angles illustrating community change from observation to observation. Look at CTA-II for the visualization of ordinations individually with reference points and extraction and visualization of distances from the starting observation. 
+ 
+## Set up for analysis 
+
+Vignette can be found https://github.com/NOAA-EDAB/survdat/blob/master/vignettes/calc_strat_mean.Rmd
+May need to use --> remotes::install_github("NOAA-EDAB/survdat",build_vignettes=TRUE, force= TRUE)
+
+
+# 1. Setup 
+```{r Setup} 
+#####Running these to get the datasets needed for plotting
+setwd("~/Desktop/Chapter 1/CTA_Chapter1")
+load("~/Desktop/Chapter 1/CTA_Chapter1/data/NEFSC_BTS_2021_all_seasons.RData")
+
+library(reshape2)
+library(lattice)
+library(maptools)
+library(sp)
+library(rgdal)
+library(raster)
+library(rgeos)
+library(data.table)
+library(vegan)
+library(permute)
+library(vegclust)
+library(ecotraj)
+library(Rcpp)
+library(survdat)
+library(lwgeom)
+library(dplyr)
+library(remotes)
+library(survdat)
+library(data.table)
+
+
+# install.packages("remotes")
+# remotes::install_github("NOAA-EDAB/survdat")
+
+```
+
+#2. Data wrangling 
+```{r Data formatting & mapping}
+survdat <- survey$survdat
+#quick check to make sure survdat covers areas of interest 
+summary(survdat$YEAR)
+# View(survdat)
+
+######Plot the EPUs
+areaPolygon <- sf::st_read(dsn = system.file("extdata","EPU.shp",package="survdat"), quiet=T)
+plot_shapefile(areaPolygon)
+
+
+##########Chunk
+stations<-as.data.table(unique(survdat, by = c("CRUISE6", "STRATUM", "TOW")))
+# View(stations)
+
+data.table::setkey(stations, YEAR , STRATUM)
+stations[, ntows := length(STATION), by = key(stations)]
+head(stations)
+
+```
+
+These species were chosen based on a threshold of being caught in 0.01% of all surveys. Unclassified species are removed. 
+```{r Defined species to include in analysis}
+
+######The species
+survdat<- survdat %>%
+  filter(COMNAME == "ROUGHTAIL STINGRAY" |
+           COMNAME == "ATLANTIC CROAKER" | 
+           COMNAME == "BUTTERFISH"| 
+           COMNAME == "LONGFIN SQUID" | 
+           COMNAME == "SPOTTED HAKE"|
+           COMNAME == "SEA SCALLOP" | 
+           COMNAME == "NORTHERN SHORTFIN SQUID" |
+           COMNAME == "SMOOTH DOGFISH"|
+           COMNAME == "BULLNOSE RAY"|
+           COMNAME == "ROUND HERRING"|
+           COMNAME == "SCUP"|
+           COMNAME == "NORTHERN SEAROBIN"| 
+           # COMNAME == "TRASH"|##unclassified! include? 
+           COMNAME == "BLUNTNOSE STINGRAY"| 
+           COMNAME == "SPOT"|
+           COMNAME == "SPINY BUTTERFLY RAY"|
+           COMNAME == "COWNOSE RAY"|
+           COMNAME == "LOGGERHEAD SEATURTLE"|
+           COMNAME == "SANDBAR SHARK"|
+           COMNAME == "FOURSPOT FLOUNDER"|
+           COMNAME == "HORSESHOE CRAB"|
+           COMNAME == "LITTLE SKATE"|
+           COMNAME == "ATLANTIC ANGEL SHARK"|
+           COMNAME == "AMERICAN LOBSTER"|
+           #COMNAME == "DOGFISH,UNC"| ##unclassified! include? 
+           COMNAME == "SOUTHERN STINGRAY"|
+           COMNAME == "SUMMER FLOUNDER"|
+           COMNAME == "BASKING SHARK"|
+           COMNAME == "CHUB MACKEREL"|
+           COMNAME == "BLUEFISH"|
+           COMNAME == "ROSETTE SKATE"|
+           COMNAME == "CLEARNOSE SKATE"|
+           COMNAME == "GOOSEFISH"|
+           # COMNAME == "RAY AND SKATE UNCL"|##unclassified! include? 
+           COMNAME == "SILVER HAKE"|
+           COMNAME == "SPINY DOGFISH"|
+           COMNAME == "YELLOWTAIL FLOUNDER"|
+           COMNAME == "WINDOWPANE"|
+           COMNAME == "DUSKY SHARK"|
+           #COMNAME == "SEA BASS UNCL"|##unclassified! include? 
+           COMNAME == "BLACK SEA BASS"|
+           COMNAME == "RED HAKE"|
+           COMNAME == "CHAIN DOGFISH"|
+           COMNAME == "OFFSHORE HAKE"|
+           COMNAME == "STRIPED ANCHOVY"|
+           COMNAME == "BLACKBELLY ROSEFISH"|
+           COMNAME == "JOHN DORY"|
+           COMNAME == "BEARDFISH"|
+           COMNAME == "OCEAN SUNFISH"|
+           COMNAME == "SOUTHERN EAGLE RAY"|
+           COMNAME == "ATLANTIC ROCK CRAB"|
+           COMNAME == "ATLANTIC SHARPNOSE SHARK"|
+           COMNAME == "WEAKFISH"|
+           COMNAME == "WINTER FLOUNDER"|
+           COMNAME == "COBIA"|
+           COMNAME == "FAWN CUSK-EEL"|
+           COMNAME == "COARSEHAND LADY CRAB"|
+           COMNAME == "ACADIAN REDFISH"|
+           COMNAME == "HADDOCK"|
+           COMNAME == "POLLOCK"|
+           COMNAME == "ATLANTIC COD"|
+           COMNAME == "WHITE HAKE"|
+           COMNAME == "ATLANTIC HERRING"|
+           COMNAME == "AMERICAN PLAICE"|
+           COMNAME == "THORNY SKATE"|
+           COMNAME == "WITCH FLOUNDER"|
+           COMNAME == "SHRIMP UNCL"|
+           COMNAME == "NORTHERN SHRIMP"|
+           COMNAME == "ALEWIFE"|
+           COMNAME == "CUSK"|
+           COMNAME == "LONGHORN SCULPIN"|
+           COMNAME == "WINTER SKATE"|
+           COMNAME == "SMOOTH SKATE"|
+           COMNAME == "BARNDOOR SKATE"|
+           COMNAME == "SEA RAVEN"|
+           COMNAME == "ATLANTIC MACKEREL"|
+           COMNAME == "ATLANTIC WOLFFISH"|
+           COMNAME == "ATLANTIC HALIBUT"|
+           COMNAME == "OCEAN POUT"|
+           COMNAME == "STRIPED BASS") 
+
+
+length(unique(survdat$COMNAME)) ##76 species included in analysis
+
+```
+
+
+#3. Calculate stratified means
+
+
+Stratified means for all EPUs 
+```{r} 
+area <- sf::st_read(dsn = system.file("extdata","EPU.shp",package="survdat"),quiet=T)
+gbsurv<-calc_stratified_mean(survdat, 
+                             areaPolygon = area, 
+                             areaDescription = "EPU",
+                             filterByArea = "GB", 
+                             filterBySeason = "FALL", 
+                             groupDescription = "COMNAME", 
+                             filterByGroup = "all", 
+                             mergesexFlag = T, 
+                             tidy = F, 
+                             returnPrepData = F
+)
+
+#add column to data set with the EPU in it 
+gbsurv$EPU<-"GB"
+###see how many unique years of data there are
+length(unique(gbsurv$YEAR))#57 years
+
+unique(gbsurv$YEAR)[order(unique(gbsurv$YEAR))]
+
+
+
+gomsurv<-calc_stratified_mean(survdat, 
+                              areaPolygon = area, 
+                              areaDescription = "EPU",
+                              filterByArea = "GOM", 
+                              filterBySeason = "FALL", 
+                              groupDescription = "COMNAME", 
+                              filterByGroup = "all", 
+                              mergesexFlag = T, 
+                              tidy = F, 
+                              returnPrepData = F
+)
+
+gomsurv$EPU<-"GOM"
+length(unique(gomsurv$YEAR))#57 years
+unique(gomsurv$YEAR)[order(unique(gomsurv$YEAR))]
+
+
+mabsurv<-calc_stratified_mean(survdat, 
+                              areaPolygon = area, 
+                              areaDescription = "EPU",
+                              filterByArea = "MAB", 
+                              filterBySeason = "FALL", 
+                              groupDescription = "COMNAME", 
+                              filterByGroup = "all", 
+                              mergesexFlag = T, 
+                              tidy = F, 
+                              returnPrepData = F
+)
+mabsurv$EPU<-"MAB"
+
+#######NOTE: 2017 is missing in the MAB due to documented ship issues 
+length(unique(mabsurv$YEAR))
+unique(mabsurv$YEAR)[order(unique(mabsurv$YEAR))]
+
+
+```
+
+#4. Create full data frame to run analysis 
+
+```{r} 
+######Put it all together
+sp_counts<-rbind(gbsurv, gomsurv, mabsurv)
+fin<-dcast(sp_counts, EPU + YEAR ~ COMNAME, value.var = "strat.biomass")
+fin<-fin %>% dplyr::filter(YEAR > 1968)
+#could modify here is you need additional columns included in your final analysis data frame (e.g. SVSPP)
+fin$EPU
+fin$YEAR
+
+
+fin[is.na(fin)]<-0#put 0s in where no catch occured in a given year
+sp_data<-fin[,3:ncol(fin)]#just the species dataset no delimiter of EPU or other identifiers 
+# View(sp_data)
+```
+
+#5. Ordination visualization 
+
+For all three EPUs visualized on the same ordination figure (no connecting lines)
+
+Visual of points in time using color as a  gradient for passage of time
+```{r}
+#Define some colors based on YEAR
+cfunk<-colorRampPalette(c("yellow","red"))
+fin$color<-cfunk(20)[as.numeric(cut(fin$YEAR,breaks=20))]
+fin$mypch<-21
+
+#or if you want to change the shape of the dot you can keep this code 
+fin[fin$EPU == "GOM", "mypch"]<-22
+fin[fin$EPU == "MAB", "mypch"]<-23
+fin[fin$EPU == "GB", "mypch"]<-24
+
+###############Create Distance matrix############
+#note Hellinger transformation of community data (recommended for composition data)
+H_E<-dist(decostand(sp_data, method = "hellinger",
+                    na.rm = TRUE))
+# View(H_E_ord)
+H_E_ord<-cmdscale(H_E, add= TRUE, k = nrow(sp_data)-1)
+
+#just black and white no color no shapes 
+plot(H_E_ord$points[,1],H_E_ord$points[,2])
+
+#color and shapes ordination 
+plot(H_E_ord$points[,1],H_E_ord$points[,2],bg = fin$color, pch = fin$mypch, type = "p", col = "black",
+     xlab = "Ordination Axis 1",
+     ylab= "Ordination Axis 2",
+     cex = 1) 
+
+
+#Lets bind ordination axes to fin to make sure thigns stay aligned correctly
+#colors but no shapes designated 
+fin$ORD1<-H_E_ord$points[,1]#
+fin$ORD2<-H_E_ord$points[,2]
+plot(fin$ORD1, fin$ORD2, bg = fin$color, pch = 21,
+     main = "ALL - Original plot")
+
+```
+
+#6. Running and visualizing the CTA 
+
+
+```{r} 
+#ordination with connected lines - CTA, you can define colors as needed, normally just black 
+trajectoryPCoA(H_E, sites = fin$EPU,fin$YEAR, lwd = 1.5, traj.colors = c("turquoise", "red", "purple"), survey.labels = FALSE)
+
+#GB was first, GOM second and MAB third in the order c(X,X,X)
+
+#color blind friendly with smaller arrowheads 
+trajectoryPCoA(H_E, sites = fin$EPU,fin$YEAR, lwd = 1.5, traj.colors = c("#E69F00", "#56B4E9", "#009E73"), length = 0.15, survey.labels = FALSE)
+```
+
+#7. Ordination with reference point comparison got to CTA-II
+
+```{r}
+#manuscript ready fig 
+
+
+pdf(file = "/Users/ileanafenwick/Desktop/Chapter 1/Ch1 Publication Development/cta_plot.pdf", 
+    width = 8,
+    height = 8)
+
+trajectoryPCoA(H_E, 
+               sites = fin$EPU,fin$YEAR, 
+               lwd = 1.5, 
+               traj.colors = c("#56B4E9","#E69F00", "#009E73"),
+               length = 0.15, 
+               survey.labels = FALSE)
+
+dev.off
+
+```
+
