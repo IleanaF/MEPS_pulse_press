@@ -40,6 +40,7 @@ traj_metrics <- read_csv("final_trans_sp_traj_metrics.csv")
 traj_metrics<-traj_metrics %>% 
               dplyr::select(EPU, YEAR, CTA_LEN, CTA_ANG )
 traj_metrics<-traj_metrics %>% filter(YEAR > 1981)
+#filtered for after 1982 because that is when the MHW time series begins. CCA requires matching data sets with no gaps. 
 traj_metrics
 
 #divide up by EPU 
