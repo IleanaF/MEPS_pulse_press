@@ -295,7 +295,7 @@ trajectoryPCoA(H_E, sites = fin$EPU,fin$YEAR, lwd = 1.5, traj.colors = c("turquo
 trajectoryPCoA(H_E, sites = fin$EPU,fin$YEAR, lwd = 1.5, traj.colors = c("#E69F00", "#56B4E9", "#009E73"), length = 0.15, survey.labels = FALSE)
 ```
 
-#7. Ordination with reference point comparison got to CTA-II
+#7. Ordination with reference point comparison go to CTA-II
 
 ```{r}
 #manuscript ready fig 
