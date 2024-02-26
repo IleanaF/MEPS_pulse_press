@@ -1,0 +1,661 @@
+---
+title: "Community Trajectory Analysis - Distances from Start"
+author: "Ileana Fenwick"
+date: '2024-02-20'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+---
+title: "Revision Data Visualization"
+author: "Ileana Fenwick"
+output:
+  html_document: default
+  word_document: default
+  pdf_document: default
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+The goal of this file is to calculate the distance from the beginning for each point in order to visualize those values and see if there are significant deviations within the time series.
+
+Note to coder - if you are looking for the original this built on go to CTA-II.Rmd
+
+# 1 SETUP
+
+### 1.1 Package loading and data loading
+
+```{r include=FALSE}
+setwd("~/Desktop/Chapter 1/CTA_Chapter1")
+
+load("~/Desktop/Chapter 1/CTA_Chapter1/data/NEFSC_BTS_2021_all_seasons.RData")
+library(here)
+library(reshape2)
+library(ggplot2)
+library(gridExtra)
+library(lattice)
+library(ggplot2)
+library(gridExtra)
+library(zoo)
+library(maptools)
+library(sp)
+library(rgdal)
+library(zoo) 
+library(raster)
+library(rgeos)
+library(data.table)
+library(stats)
+library(car) 
+library(dunn.test)
+library(vegan)
+library(permute)
+library(vegclust)
+library(ecotraj)
+library(Rcpp)
+library(survdat)
+library(lwgeom)
+library(dplyr)
+library(remotes)
+library(tidyverse)
+library(survdat)
+library(data.table)
+
+
+# install.packages("remotes")
+# remotes::install_github("NOAA-EDAB/survdat")
+
+
+survdat <- survey$survdat
+#quick check to make sure survdat covers areas of interest 
+summary(survdat$YEAR)
+# View(survdat)
+
+
+######Plot the EPUs -- this views the shape files generally 
+areaPolygon <- sf::st_read(dsn = system.file("extdata","EPU.shp",package="survdat"), quiet=T)
+plot_shapefile(areaPolygon)
+
+
+##########Setup of survey data 
+stations<-as.data.table(unique(survdat, by = c("CRUISE6", "STRATUM", "TOW")))
+# View(stations)
+data.table::setkey(stations, YEAR , STRATUM)
+stations[, ntows := length(STATION), by = key(stations)]
+head(stations)
+```
+
+### 1.2 Species filtering and mean stratified biomass calculations per EPU
+
+```{r, include = FALSE }
+
+######The species
+survdat<- survdat %>%
+  filter(COMNAME == "ROUGHTAIL STINGRAY" |
+           COMNAME == "ATLANTIC CROAKER" | 
+           COMNAME == "BUTTERFISH"| 
+           COMNAME == "LONGFIN SQUID" | 
+           COMNAME == "SPOTTED HAKE"|
+           COMNAME == "SEA SCALLOP" | 
+           COMNAME == "NORTHERN SHORTFIN SQUID" |
+           COMNAME == "SMOOTH DOGFISH"|
+           COMNAME == "BULLNOSE RAY"|
+           COMNAME == "ROUND HERRING"|
+           COMNAME == "SCUP"|
+           COMNAME == "NORTHERN SEAROBIN"| 
+           # COMNAME == "TRASH"|##unclassified! include? 
+           COMNAME == "BLUNTNOSE STINGRAY"| 
+           COMNAME == "SPOT"|
+           COMNAME == "SPINY BUTTERFLY RAY"|
+           COMNAME == "COWNOSE RAY"|
+           COMNAME == "LOGGERHEAD SEATURTLE"|
+           COMNAME == "SANDBAR SHARK"|
+           COMNAME == "FOURSPOT FLOUNDER"|
+           COMNAME == "HORSESHOE CRAB"|
+           COMNAME == "LITTLE SKATE"|
+           COMNAME == "ATLANTIC ANGEL SHARK"|
+           COMNAME == "AMERICAN LOBSTER"|
+           #COMNAME == "DOGFISH,UNC"| ##unclassified! include? 
+           COMNAME == "SOUTHERN STINGRAY"|
+           COMNAME == "SUMMER FLOUNDER"|
+           COMNAME == "BASKING SHARK"|
+           COMNAME == "CHUB MACKEREL"|
+           COMNAME == "BLUEFISH"|
+           COMNAME == "ROSETTE SKATE"|
+           COMNAME == "CLEARNOSE SKATE"|
+           COMNAME == "GOOSEFISH"|
+           # COMNAME == "RAY AND SKATE UNCL"|##unclassified! include? 
+           COMNAME == "SILVER HAKE"|
+           COMNAME == "SPINY DOGFISH"|
+           COMNAME == "YELLOWTAIL FLOUNDER"|
+           COMNAME == "WINDOWPANE"|
+           COMNAME == "DUSKY SHARK"|
+           #COMNAME == "SEA BASS UNCL"|##unclassified! include? 
+           COMNAME == "BLACK SEA BASS"|
+           COMNAME == "RED HAKE"|
+           COMNAME == "CHAIN DOGFISH"|
+           COMNAME == "OFFSHORE HAKE"|
+           COMNAME == "STRIPED ANCHOVY"|
+           COMNAME == "BLACKBELLY ROSEFISH"|
+           COMNAME == "JOHN DORY"|
+           COMNAME == "BEARDFISH"|
+           COMNAME == "OCEAN SUNFISH"|
+           COMNAME == "SOUTHERN EAGLE RAY"|
+           COMNAME == "ATLANTIC ROCK CRAB"|
+           COMNAME == "ATLANTIC SHARPNOSE SHARK"|
+           COMNAME == "WEAKFISH"|
+           COMNAME == "WINTER FLOUNDER"|
+           COMNAME == "COBIA"|
+           COMNAME == "FAWN CUSK-EEL"|
+           COMNAME == "COARSEHAND LADY CRAB"|
+           COMNAME == "ACADIAN REDFISH"|
+           COMNAME == "HADDOCK"|
+           COMNAME == "POLLOCK"|
+           COMNAME == "ATLANTIC COD"|
+           COMNAME == "WHITE HAKE"|
+           COMNAME == "ATLANTIC HERRING"|
+           COMNAME == "AMERICAN PLAICE"|
+           COMNAME == "THORNY SKATE"|
+           COMNAME == "WITCH FLOUNDER"|
+           COMNAME == "SHRIMP UNCL"|
+           COMNAME == "NORTHERN SHRIMP"|
+           COMNAME == "ALEWIFE"|
+           COMNAME == "CUSK"|
+           COMNAME == "LONGHORN SCULPIN"|
+           COMNAME == "WINTER SKATE"|
+           COMNAME == "SMOOTH SKATE"|
+           COMNAME == "BARNDOOR SKATE"|
+           COMNAME == "SEA RAVEN"|
+           COMNAME == "ATLANTIC MACKEREL"|
+           COMNAME == "ATLANTIC WOLFFISH"|
+           COMNAME == "ATLANTIC HALIBUT"|
+           COMNAME == "OCEAN POUT"|
+           COMNAME == "STRIPED BASS") 
+
+
+length(unique(survdat$COMNAME)) ##76 species included in analysis
+
+
+##########Calculate stratified means
+
+area <- sf::st_read(dsn = system.file("extdata","EPU.shp",package="survdat"),quiet=T)
+gbsurv<-calc_stratified_mean(survdat, 
+                             areaPolygon = area, 
+                             areaDescription = "EPU",
+                             filterByArea = "GB", 
+                             filterBySeason = "FALL", 
+                             groupDescription = "COMNAME", 
+                             filterByGroup = "all", 
+                             mergesexFlag = T, 
+                             tidy = F, 
+                             returnPrepData = F
+)
+
+
+#add column to data set with the EPU in it 
+gbsurv$EPU<-"GB"
+###see how many unique years of data there are
+length(unique(gbsurv$YEAR))#57 years
+
+unique(gbsurv$YEAR)[order(unique(gbsurv$YEAR))]
+
+
+
+gomsurv<-calc_stratified_mean(survdat, 
+                              areaPolygon = area, 
+                              areaDescription = "EPU",
+                              filterByArea = "GOM", 
+                              filterBySeason = "FALL", 
+                              groupDescription = "COMNAME", 
+                              filterByGroup = "all", 
+                              mergesexFlag = T, 
+                              tidy = F, 
+                              returnPrepData = F
+)
+
+gomsurv$EPU<-"GOM"
+length(unique(gomsurv$YEAR))#57 years
+unique(gomsurv$YEAR)[order(unique(gomsurv$YEAR))]
+
+
+mabsurv<-calc_stratified_mean(survdat, 
+                              areaPolygon = area, 
+                              areaDescription = "EPU",
+                              filterByArea = "MAB", 
+                              filterBySeason = "FALL", 
+                              groupDescription = "COMNAME", 
+                              filterByGroup = "all", 
+                              mergesexFlag = T, 
+                              tidy = F, 
+                              returnPrepData = F
+)
+mabsurv$EPU<-"MAB"
+length(unique(mabsurv$YEAR)) #56 versus the others being 57 so 2017 is missing 
+unique(mabsurv$YEAR)[order(unique(mabsurv$YEAR))]
+
+```
+
+### 1.3 Creating a consolidated data frame for visualization and analysis
+
+```{r, include = FALSE}
+
+######Put it all together
+sp_counts<-rbind(gbsurv, gomsurv, mabsurv)
+fin<-dcast(sp_counts, EPU + YEAR ~ COMNAME, value.var = "strat.biomass")
+fin$EPU
+fin$YEAR
+
+#here we need to make it that the time series begins in 1969 versus 63 
+fin<-fin %>% filter(YEAR > 1968)
+
+fin[is.na(fin)]<-0#put 0s in where no catch occured in a given year
+sp_data<-fin[,3:ncol(fin)]#just the species dataset no delimiter of EPU or other identifiers 
+# View(sp_data)
+# View(fin)
+
+```
+
+# 2 CTA Visualization
+
+### 2.1 Ordination visual setup
+
+```{r, include = FALSE}
+
+#Define some colors based on YEAR
+cfunk<-colorRampPalette(c("yellow","red"))
+fin$color<-cfunk(20)[as.numeric(cut(fin$YEAR,breaks=20))]
+fin$mypch<-21
+fin[fin$EPU == "GOM", "mypch"]<-22
+fin[fin$EPU == "MAB", "mypch"]<-23
+fin[fin$EPU == "GB", "mypch"]<-24
+
+
+###############Create Distance matrix############
+H_E<-dist(decostand(sp_data, method = "hellinger",
+                    na.rm = TRUE))
+# View(H_E_ord)
+H_E_ord<-cmdscale(H_E, add= TRUE, k = nrow(sp_data)-1)
+
+plot(H_E_ord$points[,1],H_E_ord$points[,2])
+
+```
+
+### 2.2 Ordination visual and CTA visual
+
+```{r, echo = FALSE}
+
+plot(H_E_ord$points[,1],H_E_ord$points[,2],bg = fin$color, pch = fin$mypch, type = "p", col = "black",
+     xlab = "Ordination Axis 1",
+     ylab= "Ordination Axis 2",
+     cex = 1) 
+
+
+trajectoryPCoA(H_E, sites = fin$EPU,fin$YEAR, lwd = 1.5, traj.colors = c("#56B4E9","#E69F00", "#009E73"), length = 0.15, survey.labels = FALSE)
+
+```
+
+# 3 Trajectory Lengths Relative for 1969 for each EPU
+
+The reference point in which each length is calculated corresponds to the first observation in 1969 within that EPU
+
+EX: 2019
+
+In the MAB it compares 2019 to the MAB's 1969 value In the GOM it compares 2019 to the GOMS's 1969 value In GB it compared 2019 to GB's 1969 value
+
+### 3.1 Setup & data cleaning
+
+```{r, include=FALSE}
+#Lets bind ordination axes to fin to make sure things stay aligned correctly
+
+fin$ORD1<-H_E_ord$points[,1]#
+fin$ORD2<-H_E_ord$points[,2]
+
+colnames(fin)
+
+#####Add CTA lenghts to fin
+
+#first we caclulate the 
+CTA1<-trajectoryPCoA(H_E, sites = fin$EPU,fin$YEAR)
+# plot(CTA1$points, cex = 2)
+
+
+#Get lengths RELATIVE TO FIRST observation - here it is 1969 
+CTAlen_rel<-trajectoryLengths(H_E, sites = fin$EPU,fin$YEAR,
+                           relativeToInitial = TRUE)
+
+#create data frame of rti - relative to intitial traj lengths 
+lens_rti <- as.data.frame(CTAlen_rel)
+# View(lens_rti)
+
+#tidying lens_rti to be Length | EPU | Yr | RTI ID 
+#placed in excel file to create the years next to it and then use tidyverse below to clean up
+#final file available in repository as rti_tidy.csv so you can ignore the next few lines 
+
+# rti_nottidy <- read_csv("revis/rti_nottidy.csv", 
+#     col_types = cols(GB = col_number(), GOM = col_number(), 
+#         MAB = col_number(), Year_refto_Initial = col_character()))
+# 
+# rti_nottidy<-as.data.frame(rti_nottidy)
+# 
+# # Reshape the data using pivot_longer
+# reshaped_data <- rti_nottidy %>%
+#   pivot_longer(cols = starts_with(c("GB", "GOM", "MAB")), 
+#                names_to = "EPU",
+#                values_to = "rti_lens")
+# 
+# # Create the final data frame
+# rti_tidy <- reshaped_data %>%
+#   select(EPU, Year_refto_Initial, RTI, rti_lens) 
+# 
+# # Print the final data set
+# View(rti_tidy)
+# 
+# #editing rti_tidy to not have the sum at the end so that I can visualize all the data on the same fig 
+# rti_tidy<-rti_tidy[1:(nrow(rti_tidy) - 3), ]
+# # Write the dataframe to a CSV file with the specified file path
+# write.csv(rti_tidy, file = "/Users/ileanafenwick/Desktop/Chapter 1/CTA_Chapter1/revis/rti_tidy.csv", row.names = FALSE)
+
+```
+
+### 3.2 Dot plot - All EPUs
+
+```{r, echo = FALSE, warning = FALSE}
+
+epu_colors <- c("GB" = "#56B4E9", "GOM" = "#E69F00", "MAB" = "#009E73") 
+epu_order<- c("GOM", "GB", "MAB")
+
+# dot plot in ggplot 
+dot_plot <- ggplot(rti_tidy, aes(x = Year_refto_Initial, y = rti_lens, color = EPU)) +
+  geom_point(size = 3) +
+  labs(title = "Dot Plot all EPUs",
+       x = "Reference Year",
+       y = "Trajectory Lengths (rel. to 1969 observation within EPU)",
+       color = "EPU") +
+       scale_color_manual(values = epu_colors)+ 
+  theme_bw()+ 
+  scale_x_discrete(guide = guide_axis(check.overlap = TRUE))+ 
+  scale_color_manual(values = epu_colors, breaks = epu_order )
+
+
+# Print the dot plot
+print(dot_plot)
+
+```
+
+With LOESS smoother 
+
+```{r, echo = FALSE, warning = FALSE} 
+# Convert Year_refto_Initial to numeric
+rti_tidy$Year_refto_Initial <- as.numeric(as.character(rti_tidy$Year_refto_Initial))
+
+# dot plot in ggplot 
+dot_loess <- ggplot(rti_tidy, aes(x = Year_refto_Initial, y = rti_lens, color = EPU)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "Dot Plot all EPUs w LOESS",
+       x = "Reference Year",
+       y = "Trajectory Lengths (rel. to 1969 observation within EPU)",
+       color = "EPU") +
+  scale_color_manual(values = epu_colors) + 
+  theme_bw() + 
+  scale_x_continuous(guide = guide_axis(check.overlap = TRUE)) + 
+  scale_color_manual(values = epu_colors, breaks = epu_order )
+
+# Print the dot plot
+print(dot_loess)
+
+
+
+pdf(file = "/Users/ileanafenwick/Desktop/revision_figs/loess_revision.pdf", 
+    width = 8,
+    height = 8)
+
+ggplot(rti_tidy, aes(x = Year_refto_Initial, y = rti_lens, color = EPU)) +
+  geom_point(size = 3) +
+  geom_smooth(method = "loess", se = FALSE) + 
+  labs(title = "Dot Plot all EPUs w LOESS",
+       x = "Reference Year",
+       y = "Trajectory Lengths (rel. to 1969 observation within EPU)",
+       color = "EPU") +
+  scale_color_manual(values = epu_colors) + 
+  theme_bw() + 
+  scale_x_continuous(guide = guide_axis(check.overlap = TRUE)) + 
+  scale_color_manual(values = epu_colors, breaks = epu_order )
+
+dev.off() 
+
+```
+
+
+### 3.3 Dot Plot - EPUs individually
+
+```{r, echo = FALSE, warning=FALSE}
+
+# Create three separate plots by EPU with assigned colors
+plot_gb <- ggplot(rti_tidy[rti_tidy$EPU == "GB", ], aes(x = Year_refto_Initial, y = rti_lens, fill = "GB")) +
+  geom_point(size = 3, color = "#56B4E9") +
+  labs(title = "GB",
+       x = "Comparison Year",
+       y = "Trajectory Lens from Initial") +
+  theme_bw()
+
+print(plot_gb)  # Print the plot individually
+
+plot_gom <- ggplot(rti_tidy[rti_tidy$EPU == "GOM", ], aes(x = Year_refto_Initial, y = rti_lens, fill = "GOM")) +
+  geom_point(size = 3, color = "#E69F00") +
+  labs(title = "GOM",
+       x = "Comparison Year",
+       y = "Trajectory Lens from Initial") +
+  theme_bw()
+
+print(plot_gom)  # Print the plot individually
+
+plot_mab <- ggplot(rti_tidy[rti_tidy$EPU == "MAB", ], aes(x = Year_refto_Initial, y = rti_lens, fill = "MAB")) +
+  geom_point(size = 3, color = "#009E73") +
+  labs(title = "MAB",
+       x = "Comparison Year",
+       y = "Trajectory Lens from Initial") +
+  theme_bw()
+
+print(plot_mab)  # Print the plot individually
+
+# Arrange the plots in a stacked layout
+grid.arrange(plot_gb, plot_gom, plot_mab, ncol = 1)
+
+
+```
+
+### 3.4 Box plots individul & all together
+
+```{r, echo = FALSE, warning=FALSE}
+
+# Create horizontal box plots for each EPU
+p_gb <- ggplot(rti_tidy[rti_tidy$EPU == "GB", ], aes(x = rti_lens, y = EPU, fill = EPU)) +
+  geom_boxplot() +
+  labs(title = "GB", x = "Trajectory Lens from Initial", y = "EPU") +
+  theme_bw() +
+  scale_fill_manual(values = c("#56B4E9")) +
+  xlim(0.2, 1.4)
+
+p_gom <- ggplot(rti_tidy[rti_tidy$EPU == "GOM", ], aes(x = rti_lens, y = EPU, fill = EPU)) +
+  geom_boxplot() +
+  labs(title = "GOM", x = "Trajectory Lens from Initial", y = "EPU") +
+  theme_bw() +
+  scale_fill_manual(values = c("#E69F00")) +
+  xlim(0.2, 1.4)
+
+p_mab <- ggplot(rti_tidy[rti_tidy$EPU == "MAB", ], aes(x = rti_lens, y = EPU, fill = EPU)) +
+  geom_boxplot() +
+  labs(title = "MAB", x = "Trajectory Lens from Initial", y = "EPU") +
+  theme_bw() +
+  scale_fill_manual(values = c("#009E73")) +
+  xlim(0.2, 1.4)
+
+# Print each figure after creation
+print(p_gb)
+print(p_gom)
+print(p_mab)
+
+# Arrange the box plots in a stacked layout with the same x-axis scale
+grid.arrange(p_gb, p_gom, p_mab, ncol = 1)
+
+#merge into one plot 
+# pdf("allepu_box.pdf", width = 8, height = 12) # Open a new pdf file
+# grid.arrange(p_gb, p_gom, p_mab, ncol = 1)
+# dev.off() # Close the file
+```
+
+# 4 Figure w 2 dots in ordination
+
+visualize the tropicalization point and the reference point for above figures
+
+### 4.1 Setup
+
+```{r, include = FALSE}
+#Normal way o f getting lenghts
+CTA_len<-trajectoryLengths(H_E, sites = fin$EPU,fin$YEAR,
+relativeToInitial = FALSE)
+
+# View(CTA_len)
+
+CTA_len <- CTA_len[, -51]
+
+length(as.numeric(CTA_len[1,1:49]))
+as.numeric(CTA_len[2,1:50])
+as.numeric(CTA_len[3,1:49])# this one has an NA for 2017
+
+table(fin$YEAR, fin$EPU)
+
+
+# made MAB lenghts in right order with a zero for missing
+#Also you can not calucate a distance for the first point (it doesnt have a preceeding point to compare to)
+#so put a zero here
+
+mablens<-c(0,as.numeric(CTA_len[3,1:49]))
+GBlens<-c(0,as.numeric(CTA_len[1,1:50]))
+GOMlens<-c(0,as.numeric(CTA_len[2,1:50]))
+
+mablens
+
+fin$CTA_LEN<-c(GBlens, GOMlens, mablens)
+
+
+# View(fin)
+
+```
+
+### 4.2 MAB with first point and reference point
+
+Here the blue dot is the average ordination location of the EPus southern neighbor. In GOM it is early GB observations, in GB it is MAB observations, only in MAB no southern region is present. 
+
+The green dot is the first value in the time series from 1969. It is the point in which the distance from starting assemblage points are calculated in comparison to. The starting point is specific to each individual EPU.
+
+```{r mab visual, echo = FALSE}
+#Define average of MAB in the early period, for comparison
+MAB<-fin[fin$EPU == "MAB",]
+oldMAB<-MAB[MAB$YEAR %in% 1963:1970,]
+OLD1<-mean(oldMAB$ORD1)
+OLD2<-mean(oldMAB$ORD2)
+
+
+first_mab<-MAB[MAB$YEAR %in% 1969,]
+mab_ord1<-(first_mab$ORD1)
+mab_ord2<-(first_mab$ORD2)
+
+plot(MAB$ORD1, MAB$ORD2, bg = MAB$color, pch = 23,
+     cex = 2)
+points(OLD1, OLD2, pch = 21, bg = "blue", cex = 3)
+points(mab_ord1, mab_ord2, pch = 23, bg = "green", cex = 3)
+
+
+
+#final fig no blue dot since its not a southern neighboring region 
+pdf(file = "/Users/ileanafenwick/Desktop/revision_figs/revis_mabord2.pdf", 
+    width = 8,
+    height = 8)
+
+plot(MAB$ORD1, MAB$ORD2, bg = MAB$color, pch = 23,
+     xlab = "Ordination Axis 1", 
+     ylab = "Ordination Axis 2", 
+     cex = 2)
+points(mab_ord1, mab_ord2, pch = 23, bg = "green", cex = 3)
+
+dev.off
+```
+
+### 4.3 GB with with first point and reference point
+
+```{r gb visual, echo = FALSE }
+
+#######look at the GB
+GB<-fin[fin$EPU == "GB",]
+first_gb<-GB[GB$YEAR %in% 1969,]
+gb_ord1<-(first_gb$ORD1)
+gb_ord2<-(first_gb$ORD2)
+
+plot(GB$ORD1, GB$ORD2, bg = GB$color, pch = 24, 
+    xlim =c(-0.1,0.45), ylim = c(-0.5,0.25),
+    xlab = "Ordination Axis 1", 
+    ylab = "Ordination Axis 2", 
+     cex =2) 
+points(OLD1, OLD2, pch = 21, bg = "blue", cex = 3)
+points(gb_ord1, gb_ord2, pch = 24, bg = "green", cex = 3)
+
+pdf(file = "/Users/ileanafenwick/Desktop/revision_figs/revis_gbord.pdf", 
+    width = 8,
+    height = 8)
+
+plot(GB$ORD1, GB$ORD2, bg = GB$color, pch = 24, 
+    xlim =c(-0.1,0.45), ylim = c(-0.5,0.25),
+    xlab = "Ordination Axis 1", 
+    ylab = "Ordination Axis 2", 
+     cex =2) 
+points(OLD1, OLD2, pch = 21, bg = "blue", cex = 3)
+points(gb_ord1, gb_ord2, pch = 24, bg = "green", cex = 3)
+
+dev.off
+```
+
+### 4.4 GOM with first point and reference point
+
+```{r gom  visual, echo = FALSE}
+## GOM
+
+GOM <- fin[fin$EPU == "GOM",]
+first_gom <- GOM[GOM$YEAR %in% 1969,]
+gom_ord1 <- first_gom$ORD1
+gom_ord2 <- first_gom$ORD2
+
+oldGB<-GB[GB$YEAR %in% 1963:1970,]
+gb_OLD1<-mean(oldGB$ORD1)
+gb_OLD2<-mean(oldGB$ORD2)
+
+plot(GOM$ORD1, GOM$ORD2, bg = GOM$color, pch = 22, 
+     xlim = c(0.2, 0.45), ylim = c(-0.5, 0.8),
+     cex = 2) 
+points(gb_OLD1, gb_OLD2, pch = 21, bg = "blue", cex = 3)
+points(gom_ord1, gom_ord2, pch = 22, bg = "green", cex = 3)
+
+
+pdf(file = "/Users/ileanafenwick/Desktop/revision_figs/revis_gomord.pdf", 
+    width = 8,
+    height = 8)
+
+plot(GOM$ORD1, GOM$ORD2, bg = GOM$color, pch = 22, 
+     xlim = c(0.2, 0.45), ylim = c(-0.5, 0.8),
+      xlab = "Ordination Axis 1", 
+    ylab = "Ordination Axis 2", 
+     cex = 2) 
+points(gb_OLD1, gb_OLD2, pch = 21, bg = "blue", cex = 3)
+points(gom_ord1, gom_ord2, pch = 22, bg = "green", cex = 3)
+
+dev.off
+
+```
+
+
+
